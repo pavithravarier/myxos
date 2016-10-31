@@ -1,0 +1,174 @@
+alias Cause S0;
+alias VPagenum S1;
+alias Ip_addr S2;
+
+Cause = EFR % 10;
+VPagenum = (EFR / 10) % 100;
+Ip_addr = (EFR / 1000);
+
+if (Cause != 0)then
+	
+	if(Cause == 1)then
+		print "ILLEGAL INSTRUCTION";
+		//print Ip_addr;
+		inline "JMP 11776";
+	endif;
+
+	if(Cause == 2)then
+		print "ILLEGAL MEMORY ACCESS";
+		inline "JMP 11776";
+	endif;
+
+	if(Cause == 3)then
+		print "ARITHMETIC EXCEPTION";
+		inline "JMP 11776";
+	endif;
+
+	if(Cause == 4)then
+		print "ILLEGAL OPERANDS";
+		inline "JMP 11776";
+	endif;
+endif;
+
+//print("in exhandler");
+//print(VPagenum);
+//breakpoint;
+if(Cause == 0)then//page fault exception
+
+	if([PTBR + (VPagenum * 2)] == -1)then//accessed invalid address space
+		inline "JMP 11776";
+	endif;
+
+	if([PTBR + VPagenum] != -1)then
+		
+		alias index S3;
+		alias victimpage S4;
+		alias flag S5;
+		alias index3 S6;
+		alias freeblock S7;
+
+		flag = 0;		
+		index = 0;
+		while(index < 64)do//searching for a free page in memory
+			if([MEM_LIST + index] == 0)then
+				victimpage = index;
+				[MEM_LIST + index] = [MEM_LIST + index] + 1;
+				break;
+			endif;
+			index = index + 1;
+		endwhile;
+
+		if(index > 63)then//no free page is found
+			//print("Start");
+			index = PTBR + (VPagenum * 2);
+			
+			while(flag == 0)do
+				//print("index");
+			//print(index);
+				if(index >= 1280)then
+					index = PAGE_TABLE;//setting it back to the begining of page table
+					continue;
+				endif;
+
+				if((index + 2) % 8 == 0)then//skipping stack pages
+					index = index + 2;
+					continue;
+				endif;
+
+				if([index] == -1)then//skipping invalid entries
+					index = index + 2;
+					continue;
+				endif;
+
+
+				if([index + 1] == "01" || [index + 1] == "11")then//skipping the pages shared by more than one process
+					if([MEM_LIST + [index] ] > 1) then
+						index = index + 2;
+						continue;
+					endif;
+				endif;
+
+				if([index + 1] == "10")then//setting the reference bit to 0
+					[index + 1] = "00";
+					index = index + 2;
+					continue;
+				endif;
+
+				if([index + 1] == "11")then//setting the reference bit to 0
+					[index + 1] = "01";
+					index = index + 2;
+					continue;
+				endif;
+
+				if([index + 1] == "01")then
+					victimpage = [index];
+					flag = 1;
+					index3 = 448;
+					while(index3 < 512)do
+						if([DISK_LIST + index3] == 0)then
+							freeblock = index3;
+							[DISK_LIST + freeblock] = [DISK_LIST + freeblock] + 1;
+							break;
+						endif;
+						index3 = index3 + 1;
+					endwhile;
+		
+					if(index3 == 512)then
+						inline "JMP 11776";
+					endif;
+
+					store([index],freeblock);
+
+					[index] = freeblock;
+					[index + 1] = "00";
+					store(6,20);
+
+				endif;
+
+				index = index + 2;
+				
+			endwhile;
+		endif;
+					
+		//print("repla done");
+		alias page S6;
+		page = [PTBR + (VPagenum * 2)];
+
+		if(page >= 21 && page <= 447)then
+			load(victimpage,page);
+		endif;
+
+		if(page >= 448 && page <= 511)then
+			load(victimpage,page);
+			[DISK_LIST + page] = [DISK_LIST + page] - 1;
+			store(6,20);
+		endif;
+
+		[PTBR + (VPagenum * 2)] = victimpage;
+		[PTBR + (VPagenum * 2) + 1] = "11";
+
+		[MEM_LIST + victimpage] = 1;//used page
+
+		SP = SP + 1;
+		
+		alias physicalSP S8;
+		physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+
+		[physicalSP] = Ip_addr;
+
+		ireturn;
+	endif;
+endif;
+
+		
+			
+		
+		
+		
+
+		
+			
+		
+				
+
+	

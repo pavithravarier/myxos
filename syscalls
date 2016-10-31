@@ -1,0 +1,7 @@
+fork
+exec
+exit
+getpid
+getppid
+wait 
+signal

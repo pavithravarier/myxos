@@ -1,0 +1,130 @@
+
+alias physicalSP S0;
+physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+alias sysCallNum S1;
+sysCallNum=physicalSP-1;
+
+
+alias i S3;
+alias flag S4;
+alias fileName S2;
+fileName=[physicalSP-3];
+ 
+print fileName;
+
+
+if([sysCallNum]==2) then
+	print "insideopen";
+	alias FAT_index S5;
+	i=0;
+	flag=0;
+	while(i<64) do
+		if([FAT+i*8]==fileName) then
+			flag=1;
+			FAT_index=i;
+			print "fatindex";
+			print i;
+			break;
+		endif;
+		i=i+1;
+	endwhile;
+	
+	if(flag==0) then
+		[physicalSP-2]=-1;
+		print "return1";
+		ireturn;
+	endif;
+	
+	i=0;
+	flag=0;
+	alias opentable_index S6;
+	while(i<128) do
+ 		if([FILE_TABLE+i+0]==FAT_index) then
+			opentable_index=i;
+			print "sysopen1:";
+			print i;
+			flag=1;
+			break;
+		endif;
+		i=i+2;
+	endwhile;
+
+	if(flag==0) then
+		i=0;
+		while(i<128) do
+ 			if([FILE_TABLE+i+0]==-1) then
+				opentable_index=i;
+				print "sysopen2:";
+				print i;
+				flag=1;
+				break;
+			endif;
+			i=i+2;
+		endwhile;
+	endif;
+	if(flag==0) then
+		[physicalSP-2]=-1;
+		print "return2";
+		ireturn;
+	endif;
+
+
+	alias currentPCB S7;
+	currentPCB = READY_LIST + 32 * ((PTBR - 1024) / 8);
+
+	i=15;
+	flag=0;
+	alias process_table S2;
+	while(i<=30) do
+		if([currentPCB+i]==-1) then
+			process_table=i;
+			print "processtable";
+			print i;
+			flag=1;
+			break;
+		endif;
+		i=i+2;
+	endwhile;
+	if(flag==0) then
+		[physicalSP-2]=-1;
+		print "return3";
+		ireturn;
+	endif;
+	[currentPCB+process_table]=opentable_index;
+	[currentPCB+process_table+1]=0;
+
+	[FILE_TABLE+opentable_index*2+0]=FAT_index;
+	[FILE_TABLE+opentable_index*2+1]=[FILE_TABLE+opentable_index+1]+1;
+	[physicalSP-2]=(process_table-15)/2;
+	print "return4";
+	ireturn;
+endif;
+
+if([sysCallNum]==3) then
+	print "inclose";
+	if(fileName>=0 && fileName<=7) then
+		alias currentPCB S5;
+		currentPCB = READY_LIST + 32 * ((PTBR - 1024) / 8);
+		if([currentPCB+fileName*2+15]==-1) then
+			[physicalSP-2]=-1;
+			print "return5";
+			ireturn;
+		else
+			[FILE_TABLE+2*[currentPCB+fileName*2+15]+1] =[FILE_TABLE+2*[currentPCB+fileName*2+15]+1]-1;
+			if([FILE_TABLE+2*[currentPCB+fileName*2+15]+1]==0) then
+				[FILE_TABLE+2*[currentPCB+fileName*2+15]+0]=-1;
+			endif;
+			[currentPCB+fileName*2+15]=-1;
+			[currentPCB+fileName*2+16]=-1;
+		endif;
+
+	else 
+		[physicalSP-2]=-1;
+		print "return6";
+		ireturn;
+	endif;
+	[physicalSP-2]=0;
+	print "return7";
+	ireturn;
+
+endif;

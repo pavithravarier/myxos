@@ -1,0 +1,159 @@
+alias physicalSP S0;
+physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+
+alias sysCallNo S1;
+sysCallNo = [physicalSP - 1];//system call number found in second position of stack
+
+alias filename S2;
+filename = [physicalSP - 3];//filename argument found in fourth position of stack
+
+if(sysCallNo == 9)then//EXECUTE system call
+	alias index S3;//searching for a file with the same name exists or not
+	alias FATentry S4;
+	index = 0;
+
+	while (index < 64) do
+		if ([FAT + (index * 8)] == filename) then
+			FATentry = index;
+			break;
+		endif;
+		index = index + 1;
+	endwhile;
+
+	if(index == 64)then//failure because the new process to be loaded doesn't exist
+		[physicalSP - 2] = -1;
+		ireturn;
+	endif;
+
+	alias basicblock S5;
+	basicblock = [FAT + (FATentry * 8) + 2];
+
+	load(1,basicblock);
+
+	alias countnewblocks S6;
+	index = 0;
+	countnewblocks = 0;
+
+	while(index < 256)do
+		if([SCRATCHPAD + index] > 0 && [SCRATCHPAD + index] < 512)then
+			countnewblocks = countnewblocks + 1;
+		endif;
+		index = index + 1;
+	endwhile;
+
+	if(countnewblocks > 3)then//failure as executable files have a maximum of 3 data blocks
+		[physicalSP - 2] = -1;
+		ireturn;
+	endif;
+ 
+
+	alias block S7;
+	alias page S8;
+	index = 0;
+	while(index < 3)do 
+
+		if([PTBR + (index * 2) + 1] == "01" || [PTBR + (index * 2) + 1] == "11")then
+			page = [PTBR + (index * 2)];
+			[MEM_LIST + page] = [MEM_LIST + page] - 1;//decreementing the entry in memory free list to indicate the page is shared by one less than the number of processes
+		endif;
+
+		if([PTBR + (index * 2) + 1] == "00" || [PTBR + (index * 2) + 1] == "10")then//invalid page number instead block number
+			block = [PTBR + (index * 2)];
+			if(block >= 448)then
+				[DISK_LIST + block] = [DISK_LIST + block] - 1;//decreementing the entry in disk free list in memory to indicate the block is shared by one less than the number of processes
+			endif;
+		endif;
+
+		index = index + 1;
+	endwhile;
+
+	store(6,20);//storing the updated disk free list back to disk
+
+	alias index2 S8;
+	index2 = 0;
+	index = 0;
+	
+	while(index < countnewblocks)do
+		block = [SCRATCHPAD + index2];
+		[PTBR + (index * 2)] = block;
+		[PTBR + (index * 2) + 1] = "00";
+		
+		index = index + 1;
+		index2 = index2 + 1;
+	endwhile;
+					
+	if(countnewblocks != 3)then	
+		while(index < 3)do
+			[PTBR + (index * 2)] = -1;
+			[PTBR + (index * 2) + 1] = "00";
+			index = index + 1;
+		endwhile;
+	endif;
+
+	[PTBR + 7] = "01";//setting up the auxillary info of stack page
+				
+	alias CurrentPCB S9;
+	alias syswideentry S10;
+	alias entry S11;
+	alias CurrentPID S12;
+
+	CurrentPID = (PTBR - 1024) / 8;
+	CurrentPCB = READY_LIST + (CurrentPID * 32);
+
+	index = 0;//closing all the files opened by the currently running process
+	
+	while(index < 8)do
+		if([CurrentPCB + 15 + (index * 2)] != -1)then//pointer to system wide open file table is valid
+			entry = [CurrentPCB + 15 + (index * 2)];
+			syswideentry = FILE_TABLE + (2 * entry);
+
+			[syswideentry + 1] = [syswideentry + 1] - 1;//decreementing the file open count
+
+			if([syswideentry + 1] == 0)then//invalidating the system wide open file table entry
+				[syswideentry] = -1;
+			endif;
+	
+			[CurrentPCB + 15 + (index * 2)] = -1;//invalidating the corresponding per-process open file table entry 
+			[CurrentPCB + 15 + (index * 2) + 1] = -1;
+		endif;
+		index = index + 1;
+	endwhile;
+
+	SP = 3 * 512;
+	physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+	[physicalSP] = 0;
+
+	ireturn;
+
+endif;
+
+if(sysCallNo == 11)then//GETPID system call
+	
+	alias CurrentPID S3;
+	CurrentPID = (PTBR - 1024) / 8;
+
+	[physicalSP - 2] = CurrentPID;
+	ireturn;
+endif;
+
+
+if(sysCallNo == 12)then//GETPPID system call
+	
+	alias ppid S3;
+	alias CurrentPID S4;
+	alias CurrentPCB S5;
+
+	CurrentPID = (PTBR - 1024) / 8;
+	CurrentPCB = READY_LIST + (CurrentPID * 32);
+	ppid = [CurrentPCB + 31];
+
+	if(ppid < 0 || ppid > 31)then//failure due to invalid PID
+		[physicalSP - 2] = -1;
+		ireturn;
+	endif;
+
+	[physicalSP - 2] = ppid;//returning the value of PID of the parent process
+	ireturn;
+endif;
+
+

@@ -1,0 +1,148 @@
+alias physicalSP S0;
+physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+alias sysCallNum S1;
+sysCallNum=physicalSP-1;
+alias currentPID S15;
+alias currentPCB S14;
+currentPID = (PTBR-1024)/8;
+currentPCB=READY_LIST + 32 * currentPID;
+
+if([sysCallNum]==9) then
+
+	alias filename S2;
+	filename=[physicalSP-3];
+	alias i S3;
+	alias flag S4;
+	alias FAT_index S5;
+	alias pcb_index S6;
+	i=0;
+	flag=0;
+	while(i<64) do
+		if([FAT+i*8]==filename) then
+			flag=1;
+			FAT_index=i;
+			break;
+		endif;
+		i=i+1;
+	endwhile;
+	
+	if(flag==0) then
+		[physicalSP-2]=-1;
+		print "NO FILE";
+		ireturn;
+	endif;
+
+	i=0;
+	while (i<32) do
+		if([READY_LIST+i*32+1]==0) then
+			pcb_index=i;
+			flag=1;
+			break;
+		endif;
+		i=i+1;
+	endwhile;
+
+	if(flag==0)then
+		[physicalSP-2]=-1;
+		print "No pcb";
+		ireturn;
+	endif;
+
+	alias newPTBR S7;
+	newPTBR= 1024+ pcb_index*8;
+
+	alias currentPTBR S8;
+	currentPTBR=1024+currentPID*8;
+
+	i=0;
+	while (i<4) do
+		[newPTBR+2*i]=[currentPTBR+2*i];
+		[newPTBR+2*i+1]=[currentPTBR+2*i+1];
+	 	i=i+1;
+	 endwhile;
+	i=READY_LIST+pcb_index*32;
+	[i+0]=pcb_index;
+	//print "in spl";
+	//print pcb_index;
+	[i+1]=100+currentPID;
+	[i+2]=	BP;
+	[i+3]= SP-1;
+	[i+4]=[physicalSP];
+	[i+5]=newPTBR;
+	[i+6]=PTLR;
+	[i+7]=R0;
+	[i+8]=R1;
+	[i+9]=R2;
+	[i+10]=R3;
+	[i+11]=R4;
+	[i+12]=R5;
+	[i+13]=R6;
+	[i+14]=R7;
+	flag=15;
+	while (flag<31) do
+		[i+flag]=[currentPCB+flag];
+		flag=flag+1;
+	endwhile;
+	load (1,[FAT+FAT_index*8+2]);
+	i=0;
+	flag=0;
+	while(i<256) do
+		if ([SCRATCHPAD + i] > 0 && [SCRATCHPAD + i] < 512) then
+			flag=flag+1;
+		endif;
+	 	i=i+1;
+	endwhile;
+
+	if(flag>3) then
+		[physicalSP-2]=-1;
+		ireturn;
+	endif;
+
+	i=0;
+	while(i<flag) do
+		[currentPTBR+2*i]=[SCRATCHPAD+i];
+		[currentPTBR+2*i+1]="00";
+		i=i+1;
+	endwhile;
+
+	while(i<3) do
+		[currentPTBR+2*i]=-1;
+		[currentPTBR+2*i+1]="00";
+		i=i+1;
+	endwhile;
+	i=25;
+	while(i<64) do
+	 	if([MEM_LIST+i]==0) then
+	 			break;
+	 	endif;
+	 	i=i+1;
+	endwhile;
+	if(i==64) then
+		[physicalSP-2]=-1;
+		print "no pg";
+		ireturn;
+	endif;
+	[currentPTBR+6]=i;
+	[currentPTBR+7]="01";
+	i=15;
+	while(i<31) do
+		[currentPCB+i]=-1;
+		i=i+1;
+	endwhile;
+
+	SP=3*512;
+	physicalSP = ([currentPTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+	[physicalSP]=0;
+	ireturn;
+
+endif;
+
+if([sysCallNum]==11) then
+	[physicalSP-2]=currentPID;
+	ireturn;
+endif;
+
+if([sysCallNum]==12) then
+	[physicalSP-2]=[currentPCB+31];
+	ireturn;
+endif;

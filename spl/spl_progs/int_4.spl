@@ -1,0 +1,77 @@
+alias physicalSP S0;
+physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+alias fileDescriptor S2;
+alias wordToWrite S3;
+fileDescriptor=[physicalSP-4];
+wordToWrite=[physicalSP-3];
+
+if(fileDescriptor<0 || fileDescriptor>7) then
+	[physicalSP-2]=-1;
+	ireturn;
+endif;
+
+alias currentPCB S5;
+currentPCB = READY_LIST + 32 * ((PTBR - 1024) / 8);
+
+if([currentPCB+15+fileDescriptor*2]==-1) then
+	[physicalSP-2]=-1;
+	ireturn;
+endif;
+
+alias sysTable S6;
+alias lseek S7;
+
+sysTable=[currentPCB+15+fileDescriptor*2];
+lseek=[currentPCB+15+fileDescriptor*2+1];
+
+alias fat_index S8;
+fat_index=[FILE_TABLE+sysTable*2];
+alias basicblock S9;
+basicblock=[FAT+fat_index*8+2];
+breakpoint;
+alias datablock S1;
+load(1,basicblock);
+breakpoint;
+datablock=[SCRATCHPAD+ (lseek/512)];
+if(datablock==-1) then
+	alias i S10;
+	alias flag S11;
+	flag=0;
+	i=0;
+	while(i<448)do
+		if([DISK_LIST+i]==0) then
+
+			[DISK_LIST+i]=1;
+			flag=1;
+			break;
+		endif;
+		i=i+1;
+	endwhile;
+	if(flag==0) then
+		[physicalSP-2]=-1;
+		ireturn;
+	endif;
+	[SCRATCHPAD+(lseek/512)]=i;
+	store(1,basicblock);
+	[FAT+fat_index*8+1]=[FAT+fat_index*8+1]+512;	
+	store(5,19);
+	store(6,20);
+	breakpoint;
+
+	datablock=i;
+endif;
+breakpoint;
+
+load(1,datablock);
+breakpoint;
+
+[SCRATCHPAD+ (lseek%512)]=wordToWrite;
+store(1,datablock);
+breakpoint;
+
+[currentPCB+fileDescriptor*2+16]=[currentPCB+fileDescriptor*2+16]+1;
+
+[physicalSP-2]=0;
+ireturn;
+			
+

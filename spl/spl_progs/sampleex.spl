@@ -1,0 +1,118 @@
+alias Cause S0;
+alias VPagenum S1;
+alias Ip_addr S2;
+
+Cause = EFR % 10;
+VPagenum = (EFR / 10) % 100;
+Ip_addr = (EFR / 1000);
+
+//Printing the cause of error
+
+if (Cause != 0) then
+  if (Cause == 1) then
+    print("Ill Ins");
+  endif;
+  if (Cause == 2) then
+    print("Ill Mem Access");
+  endif;
+  if (Cause == 3) then
+    print("Arith Excep");
+  endif;
+  if (Cause == 4) then
+    print("Ill Op");
+  endif;
+  inline "JMP 11776";
+endif;
+
+breakpoint;
+
+if (VPagenum == -1) then
+  print("Invalid add");
+  inline "JMP 11776";
+endif;
+
+alias i S3;
+i = 21;
+while (i < 64) do
+  if ([MEM_LIST + i] == 0) then
+    break;
+  endif;
+  i = i + 1;
+endwhile;
+
+//print("Entr pg replace");
+breakpoint;
+//Page-Replacement Algorithm
+
+if (i == 64) then
+  alias PID S7;
+  PID = (PTBR - 1024)/8;
+  alias counter S8;
+  while (PID < 32) do
+    counter = 0;
+    alias pagetable S10;
+    pagetable = PAGE_TABLE + (8 * PID);
+    while (counter < 3) do
+      if ([pagetable + (2 * counter) + 1] == "10" && [MEM_LIST + [pagetable + (2 * counter)]] == 1) then
+        [pagetable + (2 * counter) + 1] = "00";
+      endif;
+      if ([pagetable + (2 * counter) + 1] == "11" && [MEM_LIST + [pagetable + (2 * counter)]] == 1) then
+          [pagetable + (2 * counter) + 1] = "01";
+      endif;
+
+      if ([pagetable + (2 * counter) + 1] == "01") then //if reference bit is 0
+        alias j S9;
+        j = 448;
+        while ([DISK_LIST + j] != 0) do
+          if (j == 511) then
+            print("Not swapping");
+            inline "JMP 11776";
+          endif;
+          j = j + 1;
+        endwhile;
+        store([pagetable + (2 * counter)] , j);
+        [DISK_LIST + j] = 1;
+        i = [pagetable + (2 * counter)];
+        [pagetable + (2 * counter)] = j;
+        [pagetable + (2 * counter) + 1] = "00";
+        break;
+      endif;
+      counter = counter + 1;
+    endwhile;
+    if (i != 64) then
+      break;
+    endif;
+    PID = (PID + 1) % 32;
+    //print("i");
+    //print(i);
+  endwhile;
+endif;
+
+//print("Pg repl over");
+breakpoint;
+//After page-replacement algorithm
+
+alias physicalPage S4;
+physicalPage = [PTBR + (2 * VPagenum)];
+if ([PTBR + (2 * VPagenum) + 1] == "00" || [PTBR + (2 * VPagenum) + 1] == "10") then
+  if (physicalPage < 448) then
+    load (i, physicalPage);
+  else
+    load (i, physicalPage);
+    [DISK_LIST + physicalPage] = [DISK_LIST + physicalPage] - 1;
+  endif;
+endif;
+
+[PTBR + (2 * VPagenum)] = i;
+[PTBR + (2 * VPagenum) + 1] = "11";
+[MEM_LIST + i] = 1;
+//print("Set newSP");
+breakpoint;
+
+SP = SP + 1;
+alias newphysicalSP S6;
+newphysicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+[newphysicalSP] = Ip_addr;
+
+//print ("Exit Exhand");
+ireturn;

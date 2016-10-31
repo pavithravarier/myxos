@@ -1,0 +1,35 @@
+alias physicalSP S0;
+physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+alias fileDescriptor S2;
+alias lseek S3;
+fileDescriptor=[physicalSP-4];
+lseek=[physicalSP-3];
+
+if(fileDescriptor<0 || fileDescriptor>7) then
+	[physicalSP-2]=-1;
+	ireturn;
+endif;
+alias currentPCB S5;
+currentPCB = READY_LIST + 32 * ((PTBR - 1024) / 8);
+
+if([currentPCB+15+fileDescriptor]==-1) then
+	[physicalSP-2]=-1;
+	ireturn;
+endif;
+alias sysTable S6;
+
+sysTable=[currentPCB+15+fileDescriptor];
+alias fat_index S8;
+fat_index=[FILE_TABLE+sysTable];
+alias  filesize S4;
+filesize=[FAT+fat_index*8+1];
+
+if(lseek<0 || lseek>filesize) then
+	[physicalSP-2]=-1;	
+	ireturn;
+endif;
+
+[currentPCB+16+fileDescriptor]=lseek;
+[physicalSP-2]=0;
+ireturn;
+

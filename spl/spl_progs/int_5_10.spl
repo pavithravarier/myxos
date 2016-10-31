@@ -1,0 +1,159 @@
+alias physicalSP S0;
+physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+alias sysCallNum S1;
+sysCallNum=physicalSP-1;
+print "in fork";
+if([sysCallNum]==8) then
+	alias i S2;
+	alias pcb_index S3;
+	alias flag S4;
+	flag=0;
+	i=0;
+	while(i<32) do
+		if([READY_LIST+i*32+1]==0) then
+			pcb_index=i;
+			flag=1;
+			break;
+		endif;
+		i=i+1;
+	endwhile;
+	if(flag==0)then
+		[physicalSP-2]=-1;
+		print "return1";
+		ireturn;
+	endif;
+	[READY_LIST+i*32]=i;
+
+	i=0;
+	flag=0;
+	while(i<64) do
+	 	if([MEM_LIST+i]==0) then
+	 			flag=1;
+	 			break;
+	 	endif;
+	 	i=i+1;
+	endwhile;
+
+	if(flag==0) then
+	 	//[physicalSP-2]=-1;
+	 	//ireturn;
+	 	alias PID S7;
+    PID = (PTBR - 1024)/8;
+    alias counter S8;
+    while (PID < 32) do
+      counter = 0;
+      while (counter < 3) do
+        alias page S11;
+        page = PAGE_TABLE + (8 * PID) + (2 * counter);
+        if ([page + 1] == "11" || [page + 1] == "01") then
+          if ([page + 1] == "11") then
+            [page + 1] = "01";
+          else 
+            alias j S9;
+            j = 448;
+            while ([DISK_LIST + j] != 0) do
+              if (j == 511) then
+                inline "JMP 11776";
+              endif;
+              j = j + 1;
+            endwhile;
+            store([page] , j);
+            [DISK_LIST + j] = 1;
+            i = [page]; //changing i here and setting to victim page
+            [page] = j;
+            [page + 1] = "00";
+            break;
+          endif;
+        endif;
+        counter = counter + 1;
+      endwhile;
+      if (i != 64) then
+        break;
+      endif;
+      PID = (PID + 1) % 32;
+    endwhile;
+  
+	endif;
+
+	[MEM_LIST+i]=1;
+
+	alias j S5;
+	j=0;
+	while(j<512) do
+		[i*512+j]=[[PTBR + 6] * 512 + j];
+		j=j+1;
+	endwhile;
+
+
+	alias newPTBR S6;
+	newPTBR= 1024+ pcb_index*8;
+	 [newPTBR+6]=i;
+	 [newPTBR+7]="01";
+	 
+	 i=0;
+	 while(i<3) do
+	 	[newPTBR+i*2]=[PTBR+i*2];
+	 	[newPTBR+i*2+1]=[PTBR+i*2+1];
+	 	if([newPTBR+i*2+1]=="01" || [newPTBR+i*2+1]=="11") then
+	 		[MEM_LIST+[newPTBR+i*2]]=[MEM_LIST+[newPTBR+i*2]]+1;
+	 	else
+	 		if ([newPTBR+i*2]>=448) then
+	 			[DISK_LIST +[newPTBR+i*2]]=[DISK_LIST +[newPTBR+i*2]]+1;
+	 		endif;
+	 	endif;
+	 	i=i+1;
+	 endwhile;
+
+	 store(6,20);
+
+
+	alias temp S13;
+	temp=32*pcb_index;
+	[READY_LIST+temp+5]=newPTBR;
+	[READY_LIST+temp+6]=4;
+	[READY_LIST+temp+4]=[physicalSP];
+	[READY_LIST+temp+3]=SP-1;
+	[READY_LIST+temp+2]=BP;
+	[READY_LIST+temp+7]=R0;
+	[READY_LIST+temp+8]=R1;
+	[READY_LIST+temp+9]=R2;
+	[READY_LIST+temp+10]=R3;
+	[READY_LIST+temp+11]=R4;
+	[READY_LIST+temp+12]=R5;
+	[READY_LIST+temp+13]=R6;
+	[READY_LIST+temp+14]=R7;
+	i=15;
+	alias temp1 S12;
+	temp1 = 32*((PTBR-1024)/8);
+
+	while(i<31) do
+		[READY_LIST+temp+i]=[READY_LIST+temp1+i];
+		i=i+1;
+	endwhile;
+
+	i=15;
+	while(i<31) do
+		if([READY_LIST+temp+i]!=-1) then
+			[FILE_TABLE+2*[READY_LIST+temp+i]+1]=[FILE_TABLE+2*[READY_LIST+temp+i]+1]+1;
+		endif;
+		i=i+2;
+	endwhile;
+
+	[READY_LIST+32*pcb_index+31]=(PTBR-1024)/8;
+	[READY_LIST+32*pcb_index+1]=1;
+	[physicalSP-2]=pcb_index;
+	alias newphysicalSP S8;
+	newphysicalSP = ([newPTBR + 2 * ((SP-1) / 512)] * 512) + ((SP-1) % 512);
+	[newphysicalSP-1]=-2;
+	print "return3";
+	ireturn;
+endif;
+
+
+
+	
+
+
+
+
+	

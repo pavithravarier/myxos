@@ -1,0 +1,103 @@
+alias physicalSP S0;
+physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+
+alias sysCallNo S1;
+sysCallNo = [physicalSP - 1];//system call number found in second position of stack
+
+if(sysCallNo == 5)then//WRITE system call
+	
+	alias fileDescriptor S2;
+	fileDescriptor = [physicalSP - 4];//file Descriptor argument found in fifth position of stack
+	
+	alias wordToWrite S3;
+	wordToWrite = [physicalSP - 3];//word to write argument is found in fourth position of stack
+
+	if(fileDescriptor < 0 || fileDescriptor > 7)then//invalid file Descriptor,failure
+		[physicalSP - 2] = -1;
+		ireturn;
+	endif;
+
+	alias CurrentPID S4;//to get the pid of the currently running process
+	CurrentPID = (PTBR - 1024) / 8;
+
+	alias CurrentPCB S5;//starting address of PCB of currently running process
+	CurrentPCB = 1536 + (CurrentPID * 32);
+
+	alias syswideentry S6;
+	alias LSEEK S7;
+
+	if([CurrentPCB + 15 + (fileDescriptor * 2)] == -1)then//entry in the per-process open file table is invalid (pointer to system wide open file table,failure
+		[physicalSP - 2] = -1;
+		ireturn;
+	else
+		syswideentry = [CurrentPCB + 15 + (fileDescriptor * 2)];//storing the pointer to system wide open file table field
+		LSEEK = [CurrentPCB + 15 + (fileDescriptor * 2) + 1];//storimng the LSEEK field
+	endif;
+
+	alias FATindex S1;//accessing the system wide open file table
+	FATindex = [FILE_TABLE + (syswideentry * 2)];
+
+	alias basicblock S4;//accessing the FAT to get basic block number
+	basicblock = [FAT + (FATindex * 8) + 2];
+
+	load(1,basicblock);
+
+	alias foundblock S10;
+	alias entry S6;
+
+	entry = LSEEK / 512;//to get the index of basic block entry
+	foundblock = [512 + entry];
+
+	if(foundblock == -1)then//basic block entry is invalid,have to allocate a new block to the file
+		alias searchblock S8;//searching for a free block in the disk free list
+		alias maxblock S9;
+
+		maxblock = 447;
+		searchblock = 24;
+
+		while(searchblock <= maxblock) do
+			
+				
+			if ([searchblock + DISK_LIST] == 0) then
+
+				load(1,basicblock);				
+				[DISK_LIST + searchblock] = 1;
+				[512 + entry] = searchblock;//storing the new found block in the basic block entry
+				foundblock = searchblock;
+
+				store(1,basicblock);
+
+				[FAT + (FATindex * 8) + 1] = [FAT + (FATindex * 8) + 1] + 512;//increementing the filesize field in FAT
+
+				store(5,19);//storing the updated FAT back to disk
+				store(6,20);//storing the updated disk free list back to disk
+				break;
+			endif;
+			searchblock = searchblock + 1;
+		endwhile;
+
+		if(searchblock > maxblock)then//returning failure
+			[physicalSP - 2] = -1;
+			ireturn;
+		endif;
+	endif;
+
+	
+
+	load(1,foundblock);//loading the datablock to scratchpad
+
+	alias offset S6;
+	offset = LSEEK % 512;//to calculate the offset within the page 
+
+	[512 + offset] = wordToWrite;//writing the argument in the Lseek position
+
+	store(1,foundblock);//storing the datablock back to disk
+
+	[CurrentPCB + 15 + (fileDescriptor * 2) + 1] = [CurrentPCB + 15 + (fileDescriptor * 2) + 1] + 1;//increementing the LSEEK position by 1 since a word is written to the file
+
+	[physicalSP - 2] = 0;//returning success
+	ireturn;
+
+endif;
+
+	

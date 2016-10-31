@@ -1,0 +1,114 @@
+alias physicalSP S0;
+physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+
+alias sysCallNo S1;
+sysCallNo = [physicalSP - 1];//system call number found in second position of stack
+
+if(sysCallNo == 6)then//SEEK system call
+	
+	alias fileDescriptor S2;
+	fileDescriptor = [physicalSP - 4];//file Descriptor argument found in fifth position of stack
+	
+	alias newLseek S3;
+	newLseek = [physicalSP - 3];//new LSEEK argument is found in fourth position of stack
+
+	if(fileDescriptor < 0 || fileDescriptor > 7)then//invalid file Descriptor,failure
+		[physicalSP - 2] = -1;
+		ireturn;
+	endif;
+
+	alias CurrentPID S4;//to get the pid of the currently running process
+	CurrentPID = (PTBR - 1024) / 8;
+
+	alias CurrentPCB S5;//starting address of PCB of currently running process
+	CurrentPCB = 1536 + (CurrentPID * 32);
+
+	alias syswideentry S6;
+
+	if([CurrentPCB + 15 + (fileDescriptor * 2)] == -1)then//entry in the per-process open file table is invalid (pointer to system wide open file table,failure
+		[physicalSP - 2] = -1;
+		ireturn;
+	else
+		syswideentry = [CurrentPCB + 15 + (fileDescriptor * 2)];//storing the pointer to system wide open file table field
+	endif;
+
+	alias FATindex S4;//accessing the system wide open file table
+	FATindex = [FILE_TABLE + (syswideentry * 2)];
+
+	alias filesize S6;//accessing the FAT to get filesize
+	filesize = [FAT + (FATindex * 8) + 1];
+
+	if(newLseek < 0 || newLseek >= filesize)then//checking the validity of the newLseek value(0-filesize)
+		[physicalSP - 2] = -1;
+		ireturn;
+	endif;
+
+	[CurrentPCB + 15 + (fileDescriptor * 2) + 1] = newLseek;//storing the new LSEEK value in the LSEEK field of filedescriptor
+
+	[physicalSP - 2] = 0;//returning success
+	ireturn;
+endif; 
+
+if(sysCallNo == 7)then//READ system call
+	
+	alias fileDescriptor S2;
+	fileDescriptor = [physicalSP - 4];//file Descriptor argument found in fifth position of stack
+	
+	alias wordRead S3;
+	wordRead = [physicalSP - 3];//variable to store the word read argument is found in fourth position of stack(call by reference)
+
+	if(fileDescriptor < 0 || fileDescriptor > 7)then//invalid file Descriptor,failure
+		[physicalSP - 2] = -1;
+		ireturn;
+	endif;
+
+	alias CurrentPID S4;//to get the pid of the currently running process
+	CurrentPID = (PTBR - 1024) / 8;
+
+	alias CurrentPCB S5;//starting address of PCB of currently running process
+	CurrentPCB = 1536 + (CurrentPID * 32);
+
+	alias syswideentry S6;
+	alias LSEEK S7;
+
+	if([CurrentPCB + 15 + (fileDescriptor * 2)] == -1)then//entry in the per-process open file table is invalid (pointer to system wide open file table,failure
+		[physicalSP - 2] = -1;
+		ireturn;
+	else
+		syswideentry = [CurrentPCB + 15 + (fileDescriptor * 2)];//storing the pointer to system wide open file table field
+		LSEEK = [CurrentPCB + 15 + (fileDescriptor * 2) + 1];//storing the LSEEK field
+	endif;
+
+	alias FATindex S4;//accessing the system wide open file table
+	FATindex = [FILE_TABLE + (syswideentry * 2)];
+
+	alias basicblock S8;//accessing the FAT to get basic block number
+	basicblock = [FAT + (FATindex * 8) + 2];
+
+	load(1,basicblock);
+
+	if(LSEEK >= [FAT + (FATindex * 8) + 1])then//checking if the LSEEK is at the end of the file,if yes then no word to read from
+		[physicalSP - 2] = -1;
+		ireturn;
+	endif;
+
+	alias foundblock S9;
+	alias entry S10;
+
+	entry = LSEEK / 512;//to get the index of basic block entry
+	foundblock = [512 + entry];//storing the new found block in the basic block entry
+
+	load(1,foundblock);//loading the data block onto Scratchpad
+
+	alias offset S6;
+	offset = LSEEK % 512;//to calculate the offset within the page 
+
+	[physicalSP - 3] = [512 + offset];//reading the argument in the Lseek position
+
+	[CurrentPCB + 15 + (fileDescriptor * 2) + 1] = [CurrentPCB + 15 + (fileDescriptor * 2) + 1] + 1;//increementing the LSEEK position by 1 since a word is written to the file
+
+	[physicalSP - 2] = 0;//returning success
+	ireturn;
+
+endif;
+

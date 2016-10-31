@@ -1,0 +1,87 @@
+alias physicalSP S0;
+physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+alias sysCallNum S15;
+sysCallNum=[physicalSP-1];
+
+if(sysCallNum==7) then
+alias fileDescriptor S2;
+alias wordRead S3;
+fileDescriptor=[physicalSP-4];
+wordRead=[physicalSP-3];
+
+if(fileDescriptor<0 || fileDescriptor>7) then
+	[physicalSP-2]=-1;
+	ireturn;
+endif;
+
+alias currentPCB S5;
+currentPCB = READY_LIST + 32 * ((PTBR - 1024) / 8);
+
+if([currentPCB+15+(fileDescriptor*2)]==-1) then
+	[physicalSP-2]=-1;
+	ireturn;
+endif;
+alias sysTable S6;
+alias lseek S7;
+
+sysTable=[currentPCB+15+(fileDescriptor*2)];
+lseek=[currentPCB+15+(fileDescriptor*2)+1];
+
+alias fat_index S8;
+fat_index=[FILE_TABLE+sysTable*2];
+alias basicblock S9;
+basicblock=[FAT+fat_index*8+2];
+alias datablock S1;
+load(1,basicblock);
+if(lseek>=[FAT+fat_index*8+1]) then
+	[physicalSP-2]=-1;
+	ireturn;
+endif;
+datablock=[SCRATCHPAD+ (lseek/512)];
+if(datablock==-1) then
+	[physicalSP-2]=-1;
+	ireturn;
+endif;
+
+load(1,datablock);
+wordRead=[SCRATCHPAD+ (lseek%512)];
+[physicalSP-3]=wordRead;
+[currentPCB+15+(fileDescriptor*2)+1]=[currentPCB+15+(fileDescriptor*2)+1]+1;
+[physicalSP-2]=0;
+ireturn;
+
+else
+alias fileDescriptor S2;
+alias lseek S3;
+fileDescriptor=[physicalSP-4];
+lseek=[physicalSP-3];
+
+if(fileDescriptor<0 || fileDescriptor>7) then
+	[physicalSP-2]=-1;
+	ireturn;
+endif;
+alias currentPCB S5;
+currentPCB = READY_LIST + 32 * ((PTBR - 1024) / 8);
+
+if([currentPCB+15+fileDescriptor*2]==-1) then
+	[physicalSP-2]=-1;
+	ireturn;
+endif;
+alias sysTable S6;
+
+sysTable=[currentPCB+15+fileDescriptor*2];
+alias fat_index S8;
+fat_index=[FILE_TABLE+sysTable*2+0];
+alias  filesize S4;
+filesize=[FAT+fat_index*8+1];
+
+if(lseek<0 || lseek>filesize) then
+	[physicalSP-2]=-1;	
+	ireturn;
+endif;
+
+[currentPCB+16+fileDescriptor*2]=lseek;
+[physicalSP-2]=0;
+ireturn;
+endif;
+

@@ -1,0 +1,186 @@
+alias physicalSP S0;
+physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+
+alias sysCallNo S1;
+sysCallNo = [physicalSP - 1];//system call number found in second position of stack
+
+alias filename S3;
+filename = [physicalSP - 3];//filename argument found in fourth position of stack
+
+if(sysCallNo == 1)then
+	alias searchfile S4;//searching for a file with the same name exists or not
+	alias maxfile S5;
+
+	maxfile = FAT + 512 - 8;
+	searchfile = FAT;
+
+	while (searchfile <= maxfile && [searchfile] != -1) do
+		if ([searchfile] == filename) then
+			[physicalSP - 2] = 0;
+			ireturn;
+		endif;
+		searchfile = searchfile + 8;
+	endwhile;
+
+	alias searchblock S4;//searching for a free block in the disk free list
+	alias maxblock S5;
+	alias foundblock S6;
+
+	maxblock = DISK_LIST + 447;
+	searchblock = DISK_LIST + 24;
+
+	while(searchblock <= maxblock) do
+		if ([searchblock] == 0) then
+			foundblock = searchblock - DISK_LIST;
+			break;
+		endif;
+		searchblock = searchblock + 1;
+	endwhile;
+
+	if(searchblock > maxblock)then//returning failure
+		[physicalSP - 2] = -1;
+		ireturn;
+	endif;
+
+	alias searchfile S4;//searching for a free entry in the FAT
+	alias maxfile S5;
+
+	searchfile = FAT;
+	maxfile = FAT + 512 - 8;
+
+	while(searchfile <= maxfile)do
+		if([searchfile + 2] == -1)then
+			[searchfile + 0] = filename;//setting up the FAT entry
+			[searchfile + 1] = 0;
+			[searchfile + 2] = foundblock;
+			break;
+		endif;
+		searchfile = searchfile + 8;
+	endwhile;
+
+	if(searchfile > maxfile)then //returning failure
+		[physicalSP - 2] = -1;
+		ireturn;
+	endif;
+
+	load(1,foundblock);//loading the basic block of file into scratchpad area
+
+	alias searchblock S4;
+	alias maxblock S5;
+
+	searchblock = SCRATCHPAD;
+	maxblock = PAGE_TABLE;
+
+	while(searchblock < maxblock)do//setting all words of basic block as -1
+		[searchblock] = -1;
+		searchblock = searchblock + 1;
+	endwhile;
+
+	store(1,foundblock);//storing the modified block back to the disk
+
+	[DISK_LIST + foundblock] = 1;//to indicate the basic block is used
+
+	store(5,19);//storing the updated copy of FAT back to disk
+	store(6,20);//storing the updated copy of Disk Free List back to disk
+
+	[physicalSP - 2] = 0;//indicating success
+	ireturn;
+endif;
+
+
+if(sysCallNo == 4)then//DELETE system call
+	
+	alias searchfile S4;//searching for a file with the same name exists or not
+	alias maxfile S5;
+	alias FATindex S2;
+	alias counter S6;
+
+	maxfile = FAT + 512 - 8;
+	searchfile = FAT;
+	FATindex = -1;
+	counter = 0;
+
+	while (searchfile <= maxfile && [searchfile] != -1) do
+		if ([searchfile] == filename) then
+			FATindex = counter;
+			break;
+		endif;
+		searchfile = searchfile + 8;
+		counter = counter + 1;
+	endwhile;
+
+	if(FATindex == -1)then//failure,if the file does not exist in the disk
+		[physicalSP - 2] = -1;
+		ireturn;
+	endif;
+
+	alias searchentry S4;//search the system-wide open file table ,if the file is open or not
+	alias maxentry S5;
+
+	searchentry = FILE_TABLE;
+	maxentry = FILE_TABLE + 128 - 2;
+	counter = 0;
+
+	while(searchentry <= maxentry)do//if the file is already opened,failure
+		if([searchentry] == FATindex)then
+			[physicalSP - 2] = -1;
+			ireturn;
+		endif;
+		searchentry = searchentry + 2;
+	endwhile;
+
+	alias basicblock S4;//loading basic block into scratchpad,to get data blocks
+	basicblock = [FAT + (FATindex * 8) + 2];
+
+	load(1,basicblock);
+
+	alias searchblock S5;
+	alias maxblock S6;
+	alias datablock S7;
+	alias searchdata S8;
+	alias maxdata S9;
+
+	searchblock = SCRATCHPAD;
+	maxblock = PAGE_TABLE - 256;
+	maxdata = PAGE_TABLE;
+
+	while(searchblock < maxblock)do//accessing all datablocks of the file
+		if([searchblock] != -1)then
+			datablock = [searchblock];
+			load(1,datablock);
+			searchdata = SCRATCHPAD;
+		
+			while(searchdata < maxdata)do
+				[searchblock] = "";//making the data block empty
+				searchdata = searchdata + 1;
+			endwhile;
+		
+			store(1,datablock);
+			[DISK_LIST + datablock] = 0;//df entry corresponding to the data block
+		endif;
+		searchblock = searchblock + 1;
+		load(1,basicblock);
+	endwhile;
+
+	load(1,basicblock);
+
+	searchblock = SCRATCHPAD;
+		
+	while(searchblock < maxblock)do
+		[searchblock] = "";//making the basic block empty
+		searchblock = searchblock + 1;
+	endwhile;
+		
+	store(1,basicblock);
+	[DISK_LIST + basicblock] = 0;//df entry corresponding to the basic block
+		
+	[FAT + (FATindex * 8)] = -1;//invalidate the FAT entry(filename)
+	[FAT + (FATindex * 8) + 2] = -1;//invalidate the FAT entry (block# of basic block)
+
+	store(5,19);//store the updated FAT to disk
+	store(6,20);//store the updated DF to disk
+
+	[physicalSP - 2] = 0;//returning success
+
+	ireturn;
+endif;

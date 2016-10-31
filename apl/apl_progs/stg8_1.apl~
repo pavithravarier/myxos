@@ -1,0 +1,10 @@
+decl
+	integer status;
+enddecl
+integer main()
+{
+	print ("APL open");
+	status = Create("file1.dat");
+	print(status);
+	return 0;
+}

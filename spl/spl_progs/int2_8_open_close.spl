@@ -1,0 +1,161 @@
+alias physicalSP S0;
+physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+
+alias sysCallNo S1;
+sysCallNo = [physicalSP - 1];//system call number found in second position of stack
+
+
+if (sysCallNo == 2)then//OPEN file system call
+
+	alias filename S2;
+	filename = [physicalSP - 3];//filename argument found in fourth position of stack
+	
+	alias searchfile S3;//searching the FAT for the file
+	alias maxfile S4;
+	alias FATindex S5;
+	alias counter S6;
+
+	counter = 0;
+	FATindex = -1;
+	searchfile = FAT;
+	maxfile = FAT + 512 - 8;
+
+	while(searchfile <= maxfile && [searchfile] != -1)do
+		if([searchfile] == filename)then
+			FATindex = counter;
+			break;
+		endif;
+		counter = counter + 1;
+		searchfile = searchfile + 8;
+	endwhile;
+
+	if(FATindex == -1)then//file is not present in the disk
+		[physicalSP - 2] = -1;
+		ireturn;
+	endif;
+
+	
+	alias searchentry S3;//search the system-wide open file table 
+	alias maxentry S4;
+	alias syswideentry S6;
+	alias counter S7;
+
+	searchentry = FILE_TABLE;
+	maxentry = FILE_TABLE + 128 - 2;
+	syswideentry = -1;
+	counter = 0;
+
+	while(searchentry <= maxentry)do//if the file is already opened
+		if([searchentry] == FATindex)then
+			syswideentry = counter;
+			break;
+		endif;
+		counter = counter + 1;
+		searchentry = searchentry + 2;
+	endwhile;
+
+	if(syswideentry == -1)then//searching for free entry,if the file is opened for the first time
+		searchentry = FILE_TABLE;
+		counter = 0;
+		
+		while(searchentry <= maxentry)do
+			if([searchentry] == -1)then
+				syswideentry = counter;
+				break;
+			endif;
+			searchentry = searchentry + 2;
+			counter = counter + 1;
+		endwhile;
+
+		if(searchentry > maxentry)then//no free entry in System Wide Open File table
+			[physicalSP - 2] = -1;
+			ireturn;
+		endif;
+	endif;
+
+	
+	alias CurrentPID S3;//to get the pid of the currently running process
+	CurrentPID = (PTBR - 1024) / 8;
+
+	alias CurrentPCB S4;//starting address of PCB of currently running process
+	CurrentPCB = 1536 + (CurrentPID * 32);
+
+	alias searchentry S7;
+	searchentry = CurrentPCB + 15;
+
+	alias maxentry S8;
+	maxentry = CurrentPCB + 30;
+
+	alias fileDescriptor S9;
+	fileDescriptor = -1;
+
+	alias counter S10;
+	counter = 0;
+
+	while(searchentry <= maxentry)do//searching for a free entry in per process open file table of the process
+		if([searchentry] == -1)then
+			fileDescriptor = counter;
+			break;
+		endif;
+		searchentry = searchentry + 2;
+		counter = counter + 1;
+	endwhile;
+
+	if(fileDescriptor == -1)then//failure due to no free entry in per-process open file table
+		[physicalSP - 2] = -1;
+		ireturn;
+	else	
+		[CurrentPCB + (fileDescriptor * 2) + 15] = syswideentry;//setting up the first field as the pointer to system wide open file table
+		[CurrentPCB + (fileDescriptor * 2) + 15 + 1] = 0;//setting up the LSEEK position
+	endif;
+
+	[FILE_TABLE + (syswideentry * 2)] = FATindex;//setting up the sytem wide open file table entry
+	[FILE_TABLE + (syswideentry * 2) + 1] = [FILE_TABLE + syswideentry + 1] + 1;
+	
+	[physicalSP - 2] = fileDescriptor;//returning the value of file descriptor (success)
+
+	ireturn;
+endif;
+	
+
+
+if(sysCallNo == 3)then//CLOSE system call
+	
+	alias fileDescriptor S2;
+	fileDescriptor = [physicalSP - 3];//file Descriptor argument found in fourth position of stack
+
+	if(fileDescriptor < 0 || fileDescriptor > 7)then//invalid file Descriptor,failure
+		[physicalSP - 2] = -1;
+		ireturn;
+	endif;
+	
+	alias CurrentPID S3;//to get the pid of the currently running process
+	CurrentPID = (PTBR - 1024) / 8;
+
+	alias CurrentPCB S4;//starting address of PCB of currently running process
+	CurrentPCB = 1536 + (CurrentPID * 32);
+
+	alias entry S5;
+	entry = CurrentPCB + 15 + (fileDescriptor * 2);
+
+	if([entry] == -1)then//entry in the per-process open file table is invalid (pointer to system wide open file table,failure
+		[physicalSP - 2] = -1;
+		ireturn;
+	endif;
+
+	alias syswideentry S6;//base address of system wide open file table
+	syswideentry = FILE_TABLE + (2 * [entry]);
+
+	[syswideentry + 1] = [syswideentry + 1] - 1;//decreementing the file open count
+
+	if([syswideentry + 1] == 0)then//invalidating the system wide open file table entry
+		[syswideentry] = -1;
+	endif;
+	
+	[CurrentPCB + 15 + (fileDescriptor * 2)] = -1;//invalidating the corresponding per-process open file table entry 
+	[CurrentPCB + 15 + (fileDescriptor * 2) + 1] = -1;
+
+	[physicalSP - 2] = 0;
+	ireturn;
+endif;
+

@@ -1,0 +1,81 @@
+decl 
+	integer retval1;
+	integer retval2;
+	integer retval;
+	integer pid;
+	integer fd1;
+	integer fd2;
+	integer fd;
+	string x;
+	string y;
+	integer merges(integer fd1,fd2,fd);
+
+enddecl
+
+integer merges(integer fd1,fd2,fd)
+{
+		retval1=0;
+		retval2=0;
+		while retval1!=-1 && retval2!=-1 do
+			retval1= Read(fd1,x);
+			retval2= Read(fd2,y);
+			if (x<y) then
+				retval= Write(fd,x);
+			else
+				retval= Write(fd,y);
+			endif;
+		endwhile;
+
+		if retval1==-1 then
+			while retval2!=-1 do
+				retval2 = Read(fd2,y);
+				retval= Write(fd,y);
+			endwhile;
+		endif;
+
+		if retval2 == -1 then
+			while retval1!=-1 do
+				retval1 = Read(fd1,x);
+				retval= Write(fd,x);
+			endwhile;
+		endif;	
+	return 0;	
+}
+
+integer main()
+{
+	pid = Fork();
+
+	if pid==-2 then
+		retval1 = Create ("cd.dat");
+		fd1 = Open("c.dat");
+		fd2 = Open("d.dat");
+		print ("fd2");
+		print (fd2);
+		fd = Open ("cd.dat");
+		retval1=merges(fd1,fd2,fd);
+
+	endif;
+
+	if (pid>-1) then
+		pid = Wait(pid);
+		retval1 = Create ("ab.dat");
+		fd1 = Open("a.dat");
+		fd2 = Open("b.dat");
+		fd = Open ("ab.dat");
+		retval1=merges(fd1,fd2,fd);
+
+		retval1 = Create ("abcd.dat");
+		fd1 = Open("ab.dat");
+		fd2 = Open("cd.dat");
+		fd = Open ("abcd.dat");
+		retval1= merges(fd1,fd2,fd);	
+	
+	endif;
+
+
+
+	return 0;	
+
+
+}

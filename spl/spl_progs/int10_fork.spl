@@ -1,0 +1,189 @@
+alias physicalSP S0;
+physicalSP = ([PTBR + 2 * (SP/512)] * 512) + (SP % 512);
+
+alias sysCallNo S1;
+sysCallNo = [physicalSP - 1];
+
+if (sysCallNo == 8)then//FORK system call
+
+	alias index S2;
+	alias PCBindex S3;
+	index = 0;
+  
+	while(index < 32)do//searching for a free PCB in the ready list for the child process
+		if([READY_LIST + (index * 32) + 1] == 0)then
+			PCBindex = index;
+			break;
+		endif;
+		index = index + 1;
+	endwhile;
+
+	if(index == 32)then//returning failure due to lack of free PCB's
+		[physicalSP - 2] = -1;
+		ireturn;
+	endif;
+
+	[READY_LIST + (PCBindex * 32) + 0] = PCBindex;//setting up PID of the child process
+
+	index = 25;//searching the memory free list for free memory page for stack
+	while(index < 64)do
+		if([MEM_LIST + index] == 0)then
+			[MEM_LIST + index] = 1;//used page 
+			break;
+		endif;
+		index = index + 1;
+	endwhile;
+	
+	
+
+	alias PID S4;
+	alias entry S5;
+	alias index2 S6;
+	alias page S7;
+	alias freeblock S8;
+	alias flag S9;
+	flag = 0;
+	PID = (PTBR - 1024)/8;
+	if (index == 64) then //Page replacement algo
+		
+	   	entry = PTBR;
+			
+		while(flag == 0)do
+				
+			if(entry >= 1280)then
+				entry = PAGE_TABLE;//setting it back to the begining of page table
+				continue;
+			endif;
+
+			if((entry + 2) % 8 == 0)then//skipping stack pages
+				entry = entry + 2;
+				continue;
+			endif;
+
+			if([entry] == -1)then//skipping invalid entries
+				entry = entry + 2;
+				continue;
+			endif;
+
+
+			if([entry + 1] == "01" || [entry + 1] == "11")then//skipping the pages shared by more than one process
+				if([MEM_LIST + [entry] ] > 1) then
+					entry = entry + 2;
+					continue;
+				endif;
+			endif;
+
+			if([entry + 1] == "11")then//setting the reference bit to 0
+				[entry + 1] = "01";
+				entry = entry + 2;
+				continue;
+			endif;
+
+			if([entry + 1] == "01")then
+				index = [entry];
+				flag = 1;
+				freeblock = 448;
+				while(freeblock < 512)do
+					if([DISK_LIST + freeblock] == 0)then
+						[DISK_LIST + freeblock] = [DISK_LIST + freeblock] + 1;
+						break;
+					endif;
+					freeblock = freeblock + 1;
+				endwhile;
+		
+				if(freeblock == 512)then
+					inline "JMP 11776";
+				endif;
+
+				store([entry],freeblock);
+
+				[entry] = freeblock;
+				[entry + 1] = "00";
+				store(6,20);
+
+			endif;
+
+			entry = entry + 2;
+				
+		endwhile;
+	endif;
+
+	[MEM_LIST + index] = 1;
+  	
+	index2 = 0;//copying the comtents of stack page
+	while (index2 < 512) do
+		[(index*512)+ index2] = [([PTBR + 6]*512) + index2];
+    		index2 = index2 + 1;
+  	endwhile;
+
+  	alias ChildPTBR S9;//setting up the page table of the child process
+  	ChildPTBR = PAGE_TABLE + (PCBindex * 8);
+  	[ChildPTBR + 6] = index;
+  	[ChildPTBR + 7] = "01";
+
+	index2 = 0;
+  	while (index2 < 3) do
+    		[ChildPTBR + (2 * index2) + 0] = [PTBR + (2 * index2) + 0];
+    		[ChildPTBR + (2 * index2) + 1] = [PTBR + (2 * index2) + 1];
+    
+		if ([ChildPTBR + (2 * index2) + 1] == "01" || [ChildPTBR + (2 * index2) + 1] == "11") then
+      			[MEM_LIST + [ChildPTBR + (2 * index2) + 0]] = [MEM_LIST + [ChildPTBR + (2 * index2) + 0]] + 1;
+    		endif;
+    		
+		if ([ChildPTBR + (2 * index2) + 1] == "00" || [ChildPTBR + (2 * index2) + 1] == "10") then
+      			if ([ChildPTBR + (2 * index2) + 0] >= 448) then
+        			[DISK_LIST + [ChildPTBR + (2 * index2) + 0]] = [DISK_LIST + [ChildPTBR + (2 * index2) + 0]] + 1;
+        			store (6, 20);
+      			endif;
+    		endif;
+    		index2 = index2 + 1;
+  	endwhile;
+
+	alias ChildPCB S10;
+	ChildPCB = READY_LIST + (PCBindex * 32);
+					
+	[ChildPCB + 2] = BP;	
+	[ChildPCB + 3] = SP - 1;//not considering the IP value stored at top of stack	
+	[ChildPCB + 4] = [physicalSP];//setting up the IP (logical address of IP is same for both,obtained at top of the stack)
+	[ChildPCB + 5] = ChildPTBR;//setting up the PTBR field
+	[ChildPCB + 6] = 4;
+	[ChildPCB + 7] = R0;
+	[ChildPCB + 8] = R1;
+	[ChildPCB + 9] = R2;
+	[ChildPCB + 10] = R3;
+	[ChildPCB + 11] = R4;
+	[ChildPCB + 12] = R5;
+	[ChildPCB + 13] = R6;
+	[ChildPCB + 14] = R7;
+
+	alias syswideentry S11;//setting up the per process open file table
+	alias CurrentPCB S12;
+	
+	CurrentPCB = READY_LIST + (PID * 32);
+	index = 0;
+	while(index < 8)do
+		[ChildPCB + 15 + (index * 2)] = [CurrentPCB + 15 + (index * 2)];
+		[ChildPCB + 15 + (index * 2) + 1] = [CurrentPCB + 15 + (index * 2) + 1];
+		
+		entry = [ChildPCB + 15 + (index * 2)];
+		if(entry != -1)then
+			syswideentry = FILE_TABLE + (2 * entry);
+			[syswideentry + 1] = [syswideentry+ 1] + 1;//incrementing the file open count
+		endif;
+		
+		index = index + 1;
+	endwhile;
+
+	[ChildPCB + 1] = 1;//READY state for the child process
+
+	[ChildPCB + 31] = PID;//storing the PID of the parent process
+
+	[physicalSP - 2] = PCBindex;//return value(PID of the child process) for the parent process)
+
+	alias ChildphysicalSP S13;
+	ChildphysicalSP = ([ChildPTBR + 2 * ((SP-1) / 512)] * 512) + ((SP-1) % 512);//SP of the child process
+	[ChildphysicalSP-1] = -2;//return value for child process,indicating success
+
+endif;
+
+ireturn;

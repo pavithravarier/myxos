@@ -1,0 +1,155 @@
+alias Cause S0;
+alias VPagenum S1;
+alias Ip_addr S2;
+//print "in exh";
+
+Cause = EFR % 10;		// Gets value of cause field (size 1 char)
+VPagenum = (EFR / 10) % 100;    // Gets value of BadVAddr 
+Ip_addr = (EFR/1000);		//Gets value of IP at the point of exception
+
+if(Cause==1) then 
+	print "Ill-Instr";
+
+	inline "JMP 11776";
+endif;
+
+if(Cause==2) then
+	print "Ill-MA";
+	inline "JMP 11776";
+endif;	
+
+if(Cause==3) then
+	print "Arith-Ex";
+	inline "JMP 11776";
+endif;	
+
+if(Cause==4) then
+	print "Ill-Op";
+	inline "JMP 11776";
+endif;	
+
+if([PTBR+VPagenum*2]==-1) then
+	print "test";
+	inline "JMP 11776";
+endif;
+
+alias free_index S3;
+free_index=0;
+alias flag S4;
+alias i S8;
+flag=0;
+while(free_index<64) do
+	if([MEM_LIST+free_index]==0) then
+		[MEM_LIST+free_index]=1;
+		break;
+	endif;
+	free_index=free_index+1;
+endwhile;
+
+//if(free_index<64) then
+	//print "here!";
+	//load(free_index,[PTBR+VPagenum]);
+	//if([PTBR+VPagenum]>447) then
+		[DISK_LIST+[PTBR+VPagenum]]=[DISK_LIST+[PTBR+VPagenum]]-1;
+	//endif;
+	//[PTBR+VPagenum]=free_index;
+	//[PTBR+VPagenum+1]="11";
+	
+//endif;
+
+
+if(free_index==64) then  //page replacement algo
+	alias flag1 S14;
+	flag1=1;
+	i=PTBR+VPagenum*2;
+
+	while(flag1==1) do
+
+		if(i==1280) then //last address crossed,start from beginning
+			i=1024;
+			continue;
+		endif;
+
+		if((i-PTBR+2)%8==0) then  //stack pages
+			i=i+2;
+			continue;
+		endif;
+
+		if([i]==-1) then
+			i=i+2;
+			continue;
+		endif;
+
+		if([i+1]=="01"||[i+1]=="11") then
+			if([MEM_LIST+[i]]>1) then
+				i=i+2;
+				continue;
+			endif;
+		endif;
+
+		if([i+1]=="10") then
+			[i+1]="00";
+			i=i+2;
+			continue;
+		endif;
+
+		if([i+1]=="11") then
+			[i+1]="01";
+			i=i+2;
+			continue;
+		endif;
+
+		if([i+1]=="00" || [i+1]=="01") then
+			flag1=0;
+			alias j S5;
+			flag=0;
+			j=448;
+			while(j<512) do
+				if([DISK_LIST+j]==0) then
+					flag=1;
+					break;
+				endif;
+				j=j+1;
+			endwhile;
+
+			if(flag==0) then
+				print "test1";
+				inline "JMP 11776"; //CHECK THIS!!
+			endif;
+
+			store([i],j);
+			[DISK_LIST+j]=1;
+			store(6,20);
+			alias newpg S6;
+			free_index=[i];
+			[i]=j;
+			[i+1]="00";
+		endif;
+
+		i=i+2;
+	endwhile;
+endif;
+			alias oldpg S7;
+			oldpg = [PTBR+VPagenum*2];
+			if(oldpg<448 && oldpg>20) then
+				load(free_index,oldpg);
+			endif;
+			if(oldpg>447 && oldpg<512) then
+				load(free_index,oldpg);
+				[DISK_LIST+oldpg]=[DISK_LIST+oldpg]-1;
+				store(6,20);
+			endif;
+
+			[PTBR+VPagenum*2]=free_index;
+			[PTBR+VPagenum*2+1]="11";
+
+			SP=SP+1;
+			alias physicalSP S10;
+			physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+			[physicalSP]=Ip_addr;
+
+		
+ireturn;
+
+
+

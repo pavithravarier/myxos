@@ -1,0 +1,157 @@
+alias physicalSP S0;
+physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+alias sysCallNum S1;
+sysCallNum=physicalSP-1;
+
+if([sysCallNum]==8) then
+	alias i S2;
+	alias pcb_index S3;
+	alias flag S4;
+	flag=0;
+	i=0;
+	while(i<32) do
+		if([READY_LIST+i*32+1]==0) then
+			pcb_index=i;
+			flag=1;
+			break;
+		endif;
+		i=i+1;
+	endwhile;
+	if(flag==0)then
+		[physicalSP-2]=-1;
+		print "return1";
+		ireturn;
+	endif;
+	[READY_LIST+i*32]=i;
+	i=0;
+	alias num S5;
+	num=0;
+	//check number of valid pages and store in num
+	while(i<4) do
+		if([PTBR+2*i+1]=="01" || [PTBR+2*i+1]=="11") then
+			num=num+1;
+		endif;
+		i=i+1;
+	endwhile;
+	i=0;
+	flag=0;
+	alias free_pages S6;
+	free_pages=0;
+	while (i<64) do
+		if([MEM_LIST+i]==0) then
+			free_pages=free_pages+1;
+			if (free_pages==num) then
+				flag=1;
+				break;
+			endif;
+		endif;
+		i=i+1;
+	endwhile;
+	if(flag==0)then
+		[physicalSP-2]=-1;
+		print "return2";
+		ireturn;
+	endif;
+	alias page_used S6;
+	alias newPTBR S7;
+	alias j S8;
+	newPTBR=1024+pcb_index*8;
+	page_used=0;
+	i=0;
+	while (i < 4) do
+	
+		if ([PTBR + i * 2 + 1] == "00") then
+			// memory page hasn't been allocated
+			// so set the child process to reflect the same
+			// child PTBR will be 1024 + newPID * 8
+			[newPTBR + i * 2 + 1] = "00";
+			// skip the rest of the code
+			i = i + 1;
+			continue;
+		endif;
+		
+		// otherwise we have a valid page to copy
+				
+		// find the next free page in memory
+		
+		page_used = 0;
+		while (page_used < 64) do
+			if ([MEM_LIST + page_used] == 0) then
+				break;
+			endif;
+			page_used = page_used + 1;
+		endwhile;
+		
+		// assuming there will exist a valid free page index if
+		// the program gets this far in the code
+		
+		// set the index of the memory page as used
+		[MEM_LIST + page_used] = 1;
+		
+		// copy the pages
+		
+		j = 0;
+		while (j < 512) do
+			// freePageIndex * 512 will be the physical address of the new page
+			// [PTBR + counter * 2] will be the physical page number of the old page
+			[page_used * 512 + j] = [[PTBR + i * 2] * 512 + j];
+			j = j + 1;
+		endwhile;
+		
+		// update the physical page number field and other entries
+		[newPTBR + i * 2] = page_used;
+		[newPTBR + i * 2 + 1] = [PTBR + i * 2 + 1];
+		
+		i = i + 1;
+	endwhile;
+
+	alias temp S13;
+	temp=32*pcb_index;
+	[READY_LIST+temp+5]=newPTBR;
+	[READY_LIST+temp+6]=4;
+	[READY_LIST+temp+4]=[physicalSP];
+	[READY_LIST+temp+3]=SP-1;
+	[READY_LIST+temp+2]=BP;
+	[READY_LIST+temp+7]=R0;
+	[READY_LIST+temp+8]=R1;
+	[READY_LIST+temp+9]=R2;
+	[READY_LIST+temp+10]=R3;
+	[READY_LIST+temp+11]=R4;
+	[READY_LIST+temp+12]=R5;
+	[READY_LIST+temp+13]=R6;
+	[READY_LIST+temp+14]=R7;
+	i=15;
+	alias temp1 S12;
+	temp1 = 32*((PTBR-1024)/8);
+
+	while(i<31) do
+		[READY_LIST+temp+i]=[READY_LIST+temp1+i];
+		i=i+1;
+	endwhile;
+
+	i=15;
+	while(i<31) do
+		if([READY_LIST+temp+i]!=-1) then
+			[FILE_TABLE+2*[READY_LIST+temp+i]+1]=[FILE_TABLE+2*[READY_LIST+temp+i]+1]+1;
+		endif;
+		i=i+2;
+	endwhile;
+
+	[READY_LIST+32*pcb_index+31]=(PTBR-1024)/8;
+	[READY_LIST+32*pcb_index+1]=1;
+	[physicalSP-2]=pcb_index;
+	alias newphysicalSP S8;
+	newphysicalSP = ([newPTBR + 2 * ((SP-1) / 512)] * 512) + ((SP-1) % 512);
+	[newphysicalSP-1]=-2;
+	print "return3";
+	ireturn;
+endif;
+
+
+
+	
+
+
+
+
+	

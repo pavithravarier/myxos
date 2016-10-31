@@ -1,0 +1,138 @@
+alias physicalSP S0;
+physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+alias sysCallNum S1;
+sysCallNum=physicalSP-1;
+
+alias i S3;
+alias flag S4;
+
+alias fileName S2;
+fileName=[physicalSP-3];
+
+
+
+if([sysCallNum]==1) then
+
+	alias blocknum S5;
+	i=0;
+
+	while(i<64) do
+		if([FAT+i*8]==fileName) then
+			[physicalSP-2]=0;
+			ireturn;
+		endif;
+	i=i+1;
+	endwhile;
+
+
+
+	flag=0;
+	i=0;
+	while(i<448)do
+		if ([DISK_LIST+i]==0) then
+			flag=1;
+			blocknum=i;
+
+			break;
+		endif;
+		i=i+1;
+	endwhile;
+	if(flag==0)then
+		[physicalSP-2]=-1;
+		ireturn;
+	endif;
+	i=0;
+	flag=0;
+	while(i<64) do
+		if([FAT+2+i*8]==-1)then
+			flag=1;
+			[FAT+i*8]=fileName;
+			[FAT+i*8+1]=0;
+			[FAT+i*8+2]=blocknum;
+			load(1,blocknum);
+			i=0;
+			while(i<512)do
+				[SCRATCHPAD+i]=-1;
+				i=i+1;
+			endwhile;
+			store(1,blocknum);
+			[DISK_LIST+blocknum]=1;
+			store(5,19);
+			store(6,20);
+			[physicalSP-2]=0;
+			ireturn;
+		endif;
+		i=i+1;
+	endwhile;
+	if(flag==0)then
+		[physicalSP-2]=-1;
+		ireturn;
+	endif;
+
+endif;
+
+
+if([sysCallNum]==4) then
+	//print "in sys call delete";
+	alias fat_index S5;
+	i=0;
+	flag=0;
+	while(i<64) do
+		if([FAT+i*8]==fileName) then
+			flag=1;
+			fat_index=i;
+			//print "fat_index:";
+			//print i;
+			break;
+		endif;
+	i=i+1;
+	endwhile;
+	if(flag==0) then
+		[physicalSP-2]=-1;
+		//print "return 1";
+		ireturn;
+	endif;
+	i=0;
+	flag=0;
+	while(i<128) do
+		if([FILE_TABLE+i+0]==fat_index) then
+			[physicalSP-2]=-1;
+			//print "return 2";
+			ireturn;
+		endif;
+		i=i+2;
+	endwhile;
+	alias dbnum S6;
+	alias j S7;
+	i=0;
+	while(i<512) do
+		load(1,[FAT+fat_index*8+2]);
+		dbnum=[SCRATCHPAD+i];
+		if(dbnum!=-1) then
+		load(1,dbnum);
+		j=0;
+		while(j<512) do
+			[SCRATCHPAD+j]="";
+			j=j+1;
+		endwhile;
+		store(1,dbnum);
+		[DISK_LIST+dbnum]=0;
+		endif;
+		i=i+1;
+	endwhile;
+	load(1,[FAT+fat_index*8+2]);
+	i=0;
+	while(i<512) do 
+		[SCRATCHPAD+i]="";
+		i=i+1;
+	endwhile;
+	store(1,[FAT+fat_index*8+2]);
+	[DISK_LIST+[FAT+fat_index*8+2]]=0;
+	[FAT+fat_index*8]=-1;
+	[FAT+fat_index*8+2]=-1;
+	store(5,19);
+	store(6,20);
+	[physicalSP-2]=0;
+	//print "return 3";
+	ireturn;
+endif;			

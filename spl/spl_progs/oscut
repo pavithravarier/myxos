@@ -1,0 +1,23 @@
+counter =0;
+while(counter<25) do
+	[1280+counter]=1;
+	counter=counter+1;
+endwhile;
+while(counter<64) do
+  	[1280+counter]=0;
+	[counter]=counter+1;
+endwhile;
+ 
+counter=1;
+while(counter<32) do
+	[READY_LIST+counter*32+1]=0;
+	counter=counter+1;
+endwhile;
+
+load(19,13);
+load(20,14);
+load(21,15);
+load(22,16);
+load(23,17);
+load(24,18);
+
